@@ -12,17 +12,23 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
   final _notelpController = TextEditingController();
+  final _birthController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  String? _selectedGender;
+  bool _agreedToTerms = false;
+  String? _termsError;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _isLoading = false;
+  int _passwordStrength = 0; // 0: Kosong/Lemah, 1: Lemah, 2: Sedang, 3: Kuat
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
     _notelpController.dispose();
+    _birthController.dispose();
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
@@ -51,14 +57,23 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     return null;
   }
 
-    String? _validateNotelp(String? value) {
+  // validasi no telp
+  String? _validateNotelp(String? value) {
     if (value == null || value.trim().isEmpty) {
-      return 'Nomor tidak boleh kosong';
+      return 'Nomor telepon wajib diisi';
     }
-    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
-    if (!emailRegex.hasMatch(value.trim())) {
-      return 'Format Nomor tidak valid';
+
+    String cleanValue = value.trim();
+
+    final numericRegExp = RegExp(r'^[0-9]+$');
+    if (!numericRegExp.hasMatch(cleanValue)) {
+      return 'Nomor telepon hanya boleh berisi angka';
     }
+
+    if (cleanValue.length < 10 || cleanValue.length > 13) {
+      return 'Nomor telepon harus antara 10 hingga 13 digit';
+    }
+
     return null;
   }
 
@@ -92,12 +107,21 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
 
   // Handler submit form
   void _submitForm() {
-    if (_formKey.currentState!.validate()) {
+    setState(() {
+      if (!_agreedToTerms) {
+        _termsError = 'Anda harus menyetujui syarat & ketentuan';
+      } else {
+        _termsError = null;
+      }
+    });
+
+    if (_formKey.currentState!.validate() && _agreedToTerms) {
       setState(() {
         _isLoading = true;
       });
       // Simulasi proses registrasi
       Future.delayed(const Duration(seconds: 2), () {
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
         });
@@ -131,8 +155,15 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
     _nameController.clear();
     _emailController.clear();
     _notelpController.clear();
+    _birthController.clear();
     _passwordController.clear();
     _confirmPasswordController.clear();
+    setState(() {
+      _selectedGender = null;
+      _agreedToTerms = false;
+      _termsError = null;
+      _passwordStrength = 0;
+    });
   }
 
   @override
@@ -193,39 +224,166 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                   controller: _notelpController,
                   label: 'No Telp',
                   hint: 'Masukkan no telp Anda',
-                  prefixIcon: Icons.email,
+                  prefixIcon: Icons.phone,
+                  keyboardType: TextInputType.phone,
                   validator: _validateNotelp,
                 ),
-                // Field Password
+                 // Field Jenis Kelamin (Dropdown)
+                 Padding(
+                   padding: const EdgeInsets.symmetric(vertical: 8.0),
+                   child: DropdownButtonFormField<String>(
+                     value: _selectedGender,
+                     decoration: InputDecoration(
+                       labelText: 'Jenis Kelamin',
+                       hintText: 'Pilih jenis kelamin',
+                       prefixIcon: const Icon(Icons.wc),
+                       border: const OutlineInputBorder(),
+                       filled: true,
+                       fillColor: Colors.grey[50],
+                     ),
+                     items: const [
+                       DropdownMenuItem(
+                         value: 'Laki-laki',
+                         child: Text('Laki-laki'),
+                       ),
+                       DropdownMenuItem(
+                         value: 'Perempuan',
+                         child: Text('Perempuan'),
+                       ),
+                     ],
+                     onChanged: (value) {
+                       setState(() {
+                         _selectedGender = value;
+                       });
+                     },
+                     validator: (value) {
+                       if (value == null || value.isEmpty) {
+                         return 'Jenis kelamin wajib dipilih';
+                       }
+                       return null;
+                     },
+                   ),
+                 ),
+                 CustomTextField(
+                   controller: _birthController,
+                   label: 'Tanggal Lahir',
+                   hint: 'Pilih tanggal lahir',
+                   prefixIcon: Icons.calendar_today,
+                   readOnly: true,
+                   onTap: () async {
+                     DateTime? pickedDate = await showDatePicker(
+                       context: context,
+                       initialDate: DateTime.now(),
+                       firstDate: DateTime(1900),
+                       lastDate: DateTime.now(),
+                     );
+                     if (pickedDate != null) {
+                       // Masukkan tanggal yang dipilih ke controller
+                       _birthController.text =
+                           "${pickedDate.day}-${pickedDate.month}-${pickedDate.year}";
+                     }
+                   },
+                   validator: (value) {
+                     if (value == null || value.trim().isEmpty) {
+                       return 'Tanggal lahir wajib diisi';
+                     }
+                     return null;
+                   },
+                 ),
+                 // Field Password
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  child: TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      hintText: 'Minimal 8 karakter, huruf kapital, angka',
-                      prefixIcon: const Icon(Icons.lock),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off
-                              : Icons.visibility,
-                        ),
-                        onPressed: () {
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: _passwordController,
+                        onChanged: (value) {
                           setState(() {
-                            _obscurePassword = !_obscurePassword;
+                            if (value.isEmpty) {
+                              _passwordStrength = 0;
+                            } else if (value.length < 8) {
+                              _passwordStrength = 1; // Lemah
+                            } else {
+                              bool hasUpper = value.contains(RegExp(r'[A-Z]'));
+                              bool hasLower = value.contains(RegExp(r'[a-z]'));
+                              bool hasDigit = value.contains(RegExp(r'[0-9]'));
+                              bool hasSymbol = value.contains(RegExp(r'[!@#\$&*~_.,icata]'));
+
+                              if (hasUpper && hasLower && hasDigit && hasSymbol) {
+                                _passwordStrength = 3; // Kuat
+                              } else if ((hasUpper || hasLower) && hasDigit) {
+                                _passwordStrength = 2; // Sedang
+                              } else {
+                                _passwordStrength = 1; // Lemah
+                              }
+                            }
                           });
                         },
+                        decoration: InputDecoration(
+                          labelText: 'Password',
+                          hintText: 'Minimal 8 karakter, huruf kapital, angka',
+                          prefixIcon: const Icon(Icons.lock),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscurePassword
+                                  ? Icons.visibility_off
+                                  : Icons.visibility,
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                _obscurePassword = !_obscurePassword;
+                              });
+                            },
+                          ),
+                          border: const OutlineInputBorder(),
+                          filled: true,
+                          fillColor: Colors.grey[50],
+                        ),
+                        obscureText: _obscurePassword,
+                        validator: _validatePassword,
                       ),
-                      border: const OutlineInputBorder(),
-                      filled: true,
-                      fillColor: Colors.grey[50],
-                    ),
-                    obscureText: _obscurePassword,
-                    validator: _validatePassword,
+                      const SizedBox(height: 8),
+                      if (_passwordController.text.isNotEmpty) ...[
+                        LinearProgressIndicator(
+                          value: _passwordStrength == 1
+                              ? 0.33
+                              : _passwordStrength == 2
+                                  ? 0.66
+                                  : _passwordStrength == 3
+                                      ? 1.0
+                                      : 0.0,
+                          backgroundColor: Colors.grey[300],
+                          color: _passwordStrength == 1
+                              ? Colors.red
+                              : _passwordStrength == 2
+                                  ? Colors.orange
+                                  : Colors.green,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _passwordStrength == 1
+                              ? 'Kekuatan Password: Lemah'
+                              : _passwordStrength == 2
+                                  ? 'Kekuatan Password: Sedang'
+                                  : _passwordStrength == 3
+                                      ? 'Kekuatan Password: Kuat'
+                                      : '',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: _passwordStrength == 1
+                                ? Colors.red
+                                : _passwordStrength == 2
+                                    ? Colors.orange
+                                    : Colors.green,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
-                // Field Konfirmasi Password
+                 // Field Konfirmasi Password
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8.0),
                   child: TextFormField(
@@ -252,6 +410,38 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ),
                     obscureText: _obscureConfirmPassword,
                     validator: _validateConfirmPassword,
+                  ),
+                ),
+                // Checkbox Syarat & Ketentuan
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CheckboxListTile(
+                        title: const Text('Setuju dengan Syarat & Ketentuan'),
+                        value: _agreedToTerms,
+                        onChanged: (value) {
+                          setState(() {
+                            _agreedToTerms = value ?? false;
+                            if (_agreedToTerms) _termsError = null;
+                          });
+                        },
+                        controlAffinity: ListTileControlAffinity.leading,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      if (_termsError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 12.0),
+                          child: Text(
+                            _termsError!,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.error,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 24),
